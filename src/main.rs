@@ -191,11 +191,13 @@ const APPEARANCE_NAMESPACE: &str = "org.freedesktop.appearance";
 const COLOR_SCHEME_KEY: &str = "color-scheme";
 const ACCENT_COLOR_KEY: &str = "accent-color";
 const CONTRAST_KEY: &str = "contrast";
+const BUTTON_PLACEMENT_KEY: &str = "button-placement";
 
 struct Settings {
     pub color_scheme: ColorScheme,
     pub contrast: Contrast,
     pub accent: Srgba<f64>,
+    button_placement: (Vec<String>, Vec<String>),
 }
 
 impl Settings {
@@ -214,7 +216,24 @@ impl Settings {
                 ColorScheme::PreferLight
             },
             accent: cosmic.accent_color().into_format(),
+            button_placement: {
+                let mut leading = Vec::<String>::new();
+                if cosmic::config::show_minimize() {
+                    leading.push("minimize".to_string());
+                }
+                if cosmic::config::show_maximize() {
+                    leading.push("maximize".to_string());
+                }
+                leading.push("close".to_string());
+                (Vec::<String>::default(), leading)
+            },
         }
+    }
+    fn button_placement_to_owned_value(&self) -> zbus::fdo::Result<zvariant::OwnedValue> {
+        let ctxt = zvariant::serialized::Context::new_dbus(zvariant::LE, 0);
+        let variant = zvariant::to_bytes(ctxt, &self.button_placement).unwrap();
+        let array = zvariant::Array::from(variant.bytes());
+        OwnedValue::try_from(array).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 }
 
@@ -256,6 +275,9 @@ impl Settings {
             }) {
                 inner.insert(ACCENT_COLOR_KEY.to_string(), value);
             }
+            if let Ok(value) = self.button_placement_to_owned_value() {
+              inner.insert(BUTTON_PLACEMENT_KEY.to_string(), value);
+            }
             map.insert(APPEARANCE_NAMESPACE.to_string(), inner);
         }
         map
@@ -274,6 +296,7 @@ impl Settings {
                 blue: self.accent.blue,
             })
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string())),
+            (APPEARANCE_NAMESPACE, BUTTON_PLACEMENT_KEY) => self.button_placement_to_owned_value(),
             _ => Err(zbus::fdo::Error::Failed(
                 "Unknown namespace or key".to_string(),
             )),
